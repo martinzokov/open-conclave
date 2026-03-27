@@ -1,7 +1,7 @@
 {
-  "name": "{{pluginName}}",
+  "name": "open-conclave",
   "version": "0.1.0",
-  "description": "{{description}}",
+  "description": "Multi-agent debate orchestrator plugin for OpenCode — Captain + parallel sub-agents + dynamic debate rounds + early stopping",
   "author": {
     "name": "{{authorName}}",
     "email": "{{authorEmail}}"
