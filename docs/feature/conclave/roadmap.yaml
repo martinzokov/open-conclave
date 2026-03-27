@@ -1,0 +1,207 @@
+roadmap:
+  project_id: conclave
+  created_at: '2026-03-27T19:32:20Z'
+  total_steps: 8
+  phases: 3
+phases:
+- id: '01'
+  name: 'Foundation — Types, plugin scaffold, and agent stubs'
+  steps:
+  - id: 01-01
+    name: 'Core types and data models'
+    description: >
+      Define all shared TypeScript types used throughout the orchestration system:
+      ModelRef, SubAgentDef, AgentResponse, CritiqueResult, DebateRound,
+      StoppingInput, StoppingResult, SubAgentInput, OrchestrateArgs, ResolvedConfig.
+    criteria: >
+      All types exported from src/types.ts.
+      AgentResponse includes agentName, role, claims (with confidence), reasoning, uncertainties, answer.
+      CritiqueResult includes consensusScore, uncertaintyDelta, openIssues, synthesis.
+      DebateRound includes roundNumber, subAgentResponses, critique, timestamp.
+      StoppingInput covers all 5 signals (consensus, uncertainty, openIssues, novelty, round/max).
+      OrchestrateArgs validated with zod (query required, maxRounds default 5, debug default false).
+      TypeScript strict mode: zero errors on tsc --noEmit.
+    files_to_modify:
+      - src/types.ts
+    test_file: src/types.test.ts
+    estimated_hours: 1
+    dependencies: []
+
+  - id: 01-02
+    name: 'Plugin entry point, agent registration, and tool stub'
+    description: >
+      Replace the example plugin in src/index.ts with the ConclavePlugin.
+      Register conclave (primary), conclave-captain, conclave-harper,
+      conclave-benjamin, conclave-lucas as agents via the config hook.
+      Register a stub conclave tool (accepts OrchestrateArgs, returns placeholder string).
+      Register a /conclave slash command via config.command.
+    criteria: >
+      ConclavePlugin exported from src/index.ts.
+      config hook registers 5 agents with correct mode (primary/subagent) and descriptions.
+      conclave primary agent has system prompt instructing "ALWAYS call the conclave tool".
+      conclave tool registered under hooks.tool with correct OrchestrateArgs zod schema.
+      /conclave slash command registered with template, description, agent: 'conclave'.
+      bun build exits 0. TypeScript strict mode: zero errors.
+    files_to_modify:
+      - src/index.ts
+      - src/agents/prompts.ts
+      - src/tools/orchestrate.ts
+    test_file: src/index.test.ts
+    estimated_hours: 2
+    dependencies:
+      - 01-01
+
+- id: '02'
+  name: 'Orchestration — Debate loop components'
+  steps:
+  - id: 02-01
+    name: 'DebateHistory and StoppingEvaluator'
+    description: >
+      Implement DebateHistory class: append(round), getContext(n=3), noveltyScore().
+      Novelty computed as 1 - Jaccard bigram similarity between current and previous round's
+      combined sub-agent response text.
+      Implement evaluateStopping(input: StoppingInput): StoppingResult.
+      Stops on hard cap (max_rounds) OR all four soft conditions met simultaneously
+      (consensus >= 0.88, uncertaintyDelta < 0.03, openIssues == 0, noveltyScore < 0.04).
+    criteria: >
+      DebateHistory.append adds a round; getContext(3) returns last 3 rounds.
+      noveltyScore() returns 0 when consecutive rounds are identical text.
+      noveltyScore() returns 1 when no previous round exists (first round is fully novel).
+      evaluateStopping returns shouldStop=true + reason='max_rounds' when currentRound >= maxRounds.
+      evaluateStopping returns shouldStop=true + reason='consensus_reached' (and others) when all soft conditions met.
+      evaluateStopping returns shouldStop=false when not all soft conditions met and under cap.
+      Unit tests cover all 5 stop reasons and resume cases.
+    files_to_modify:
+      - src/orchestrator/debate.ts
+      - src/orchestrator/stopping.ts
+    test_file: src/orchestrator/debate.test.ts
+    estimated_hours: 2
+    dependencies:
+      - 01-01
+
+  - id: 02-02
+    name: 'ConfigLoader — resolve sub-agent model assignments'
+    description: >
+      Implement resolveSubAgentModels(client, context, subAgents): reads
+      client.config.get(), parses config.agent['conclave-X'].model string
+      ("provider/model" format) into ModelRef, falls back to session model
+      from the UserMessage if not configured.
+    criteria: >
+      Returns ResolvedConfig with captain + array of {SubAgentDef & {model: ModelRef}}.
+      Parses "anthropic/claude-sonnet-4-6" into {providerID:"anthropic", modelID:"claude-sonnet-4-6"}.
+      Falls back gracefully when config.agent entry is absent (uses session's providerID/modelID).
+      Unit tests: configured model, missing model (fallback), malformed string fallback.
+    files_to_modify:
+      - src/config/loader.ts
+    test_file: src/config/loader.test.ts
+    estimated_hours: 1.5
+    dependencies:
+      - 01-01
+
+  - id: 02-03
+    name: 'SubAgentRunner — child session lifecycle and response parsing'
+    description: >
+      Implement SubAgentRunner class: creates a child session via client.session.create
+      with parentID, sends a single prompt via client.session.prompt with role system
+      prompt + debate context, extracts the first ```json block from response parts,
+      parses and validates as AgentResponse, falls back to raw-text AgentResponse on
+      parse failure, disposes session after use.
+    criteria: >
+      SubAgentRunner.run(input) creates child session with parentID = input.sessionID.
+      Prompt body includes: agent (conclave-harper etc.), model override, system prompt, and parts with query + subtasks + history.
+      Extracts JSON from code fence in response text parts.
+      Returns valid AgentResponse on success.
+      Falls back to {agentName, role, claims:[{text:rawText, confidence:0.5}], reasoning:'', uncertainties:[], answer:rawText} on parse failure.
+      Session is disposed (client.session.delete) after run completes or throws.
+      Unit tests with mocked client covering: success path, JSON parse failure fallback, session disposal.
+    files_to_modify:
+      - src/orchestrator/subagent.ts
+    test_file: src/orchestrator/subagent.test.ts
+    estimated_hours: 3
+    dependencies:
+      - 01-01
+      - 01-02
+
+  - id: 02-04
+    name: 'CaptainOrchestrator — full debate loop'
+    description: >
+      Implement CaptainOrchestrator.run(args): decompose query via captain child
+      session, execute up to maxRounds of parallel sub-agent calls + captain critique,
+      check stopping signals after each round, synthesise final answer on stop.
+      Respects context.abort signal throughout.
+    criteria: >
+      run() calls decompose once at start via captain child session.
+      Each round: Promise.all on all configured sub-agents, then captain critique session.
+      StoppingEvaluator consulted after each critique; loop breaks when shouldStop=true.
+      After loop: captain synthesis session produces final string answer.
+      AbortSignal checked between phases; throws if aborted.
+      With maxRounds=1 the loop executes exactly once then synthesises.
+      Returns plain string (final answer) for the tool layer.
+      Unit tests with mocked SubAgentRunner and client covering: single round + stop, multi-round, abort mid-loop.
+    files_to_modify:
+      - src/orchestrator/captain.ts
+    test_file: src/orchestrator/captain.test.ts
+    estimated_hours: 4
+    dependencies:
+      - 02-01
+      - 02-02
+      - 02-03
+
+- id: '03'
+  name: 'Integration — Wire tool, build, and verify'
+  steps:
+  - id: 03-01
+    name: 'Wire orchestrate tool with CaptainOrchestrator'
+    description: >
+      Replace the stub in src/tools/orchestrate.ts with the full implementation:
+      call resolveSubAgentModels, instantiate CaptainOrchestrator, call run(args),
+      return result string. Include debug mode: when args.debug=true, prepend
+      full debate transcript to the answer.
+    criteria: >
+      Tool execute() calls ConfigLoader then CaptainOrchestrator.run.
+      debug=false returns only the synthesised answer string.
+      debug=true returns debate transcript header followed by synthesised answer.
+      Tool propagates errors from orchestrator as thrown strings (OpenCode renders them as tool errors).
+      Integration test with fully mocked client covers: non-debug path, debug path, error propagation.
+    files_to_modify:
+      - src/tools/orchestrate.ts
+    test_file: src/tools/orchestrate.test.ts
+    estimated_hours: 2
+    dependencies:
+      - 02-04
+      - 02-02
+
+  - id: 03-02
+    name: 'Build verification and final integration'
+    description: >
+      Ensure the full plugin builds cleanly: update package.json name/description,
+      verify bun build succeeds, all tests pass, TypeScript strict mode clean.
+      Update src/agents/prompts.ts with complete system prompts for all 5 agents
+      (conclave router, captain, harper, benjamin, lucas).
+    criteria: >
+      package.json name is "open-conclave", description is meaningful.
+      bun build ./src/index.ts --outdir dist --target bun exits 0.
+      bun test exits 0 with all tests passing.
+      tsc --noEmit exits 0.
+      Agent system prompts are complete: conclave router instructs "ALWAYS call the conclave tool", each sub-agent prompt defines their persona and output format (JSON in code fence).
+    files_to_modify:
+      - src/agents/prompts.ts
+      - package.json
+    test_file: src/agents/prompts.test.ts
+    estimated_hours: 1.5
+    dependencies:
+      - 03-01
+
+implementation_scope:
+  source_directories:
+    - src/
+  test_directories:
+    - src/
+  excluded_patterns:
+    - '*.d.ts'
+    - 'dist/**'
+    - 'node_modules/**'
+validation:
+  status: pending
+  reviewer: nw-software-crafter-reviewer
+  approved_at: ''
