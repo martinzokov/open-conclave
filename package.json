@@ -1,6 +1,6 @@
 {
   "name": "open-conclave",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Multi-agent debate orchestrator plugin for OpenCode — Captain + parallel sub-agents + dynamic debate rounds + early stopping",
   "author": {
     "name": "Martin Zokov",
