@@ -1,13 +1,17 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import {
   CONCLAVE_ROUTER_PROMPT,
-  CAPTAIN_PROMPT,
-  HARPER_PROMPT,
-  BENJAMIN_PROMPT,
-  LUCAS_PROMPT,
+  CAPTAIN_DEFAULT_PERSONA,
+  CAPTAIN_STRUCTURE_SECTION,
+  HARPER_DEFAULT_PERSONA,
+  HARPER_FORMAT_SECTION,
+  BENJAMIN_DEFAULT_PERSONA,
+  BENJAMIN_FORMAT_SECTION,
+  LUCAS_DEFAULT_PERSONA,
+  LUCAS_FORMAT_SECTION,
 } from './agents/prompts.ts';
 import { createOrchestrateTool } from './tools/orchestrate.ts';
-import { mergeAgentPrompt } from './config/loader.ts';
+import { buildSubAgentPrompt } from './config/loader.ts';
 
 export const ConclavePlugin: Plugin = async ({ client }) => {
   const orchestrateTool = createOrchestrateTool(client);
@@ -22,7 +26,9 @@ export const ConclavePlugin: Plugin = async ({ client }) => {
       config.command ??= {};
 
       // Snapshot existing user-provided agent configs before we write defaults.
-      // This preserves any user overrides (model, temperature, promptExtra, prompt, etc.)
+      // This preserves model, temperature, and persona overrides from opencode.json.
+      process.stderr.write(`[conclave] config hook  raw agent keys: ${JSON.stringify(Object.keys(config.agent ?? {}))}\n`);
+      process.stderr.write(`[conclave] config hook  harper raw: ${JSON.stringify(config.agent?.['conclave-harper'])}\n`);
       const existing = {
         conclave: config.agent['conclave'] ?? {},
         captain: config.agent['conclave-captain'] ?? {},
@@ -36,38 +42,62 @@ export const ConclavePlugin: Plugin = async ({ client }) => {
         ...existing.conclave,
         mode: 'primary',
         description: 'Multi-agent debate orchestrator (Captain + Harper + Benjamin + Lucas)',
-        prompt: mergeAgentPrompt(CONCLAVE_ROUTER_PROMPT, existing.conclave),
+        prompt: CONCLAVE_ROUTER_PROMPT,
         color: '#7C3AED',
         tools: { conclave: true },
       };
 
-      // Sub-agents — not shown in tabs, addressable by child sessions
+      // Sub-agents — not shown in tabs, addressable by child sessions.
+      // OpenCode stores persona in two places: top-level `persona` AND `options.persona`.
+      // Both are applied as the system prompt and would override the combined prompt we build.
+      // We consume the user's persona into `prompt` and mirror it in `options.persona` so
+      // whichever path OpenCode reads, it gets the full combined system prompt.
+      function applyPersona(
+        base: Record<string, unknown>,
+        builtPrompt: string,
+      ): Record<string, unknown> {
+        const { persona: _, options, ...rest } = base;
+        const mergedOptions =
+          options && typeof options === 'object'
+            ? { ...(options as Record<string, unknown>), persona: builtPrompt }
+            : { persona: builtPrompt };
+        return { ...rest, options: mergedOptions, prompt: builtPrompt };
+      }
+
       config.agent['conclave-captain'] = {
-        ...existing.captain,
+        ...applyPersona(
+          existing.captain as Record<string, unknown>,
+          buildSubAgentPrompt(CAPTAIN_DEFAULT_PERSONA, CAPTAIN_STRUCTURE_SECTION, (existing.captain as Record<string, unknown>).persona),
+        ),
         mode: 'subagent',
         description: 'Debate moderator: decomposes queries, critiques rounds, synthesizes answers',
-        prompt: mergeAgentPrompt(CAPTAIN_PROMPT, existing.captain),
       };
 
       config.agent['conclave-harper'] = {
-        ...existing.harper,
+        ...applyPersona(
+          existing.harper as Record<string, unknown>,
+          buildSubAgentPrompt(HARPER_DEFAULT_PERSONA, HARPER_FORMAT_SECTION, (existing.harper as Record<string, unknown>).persona),
+        ),
         mode: 'subagent',
         description: 'Research & Facts specialist',
-        prompt: mergeAgentPrompt(HARPER_PROMPT, existing.harper),
       };
 
       config.agent['conclave-benjamin'] = {
-        ...existing.benjamin,
+        ...applyPersona(
+          existing.benjamin as Record<string, unknown>,
+          buildSubAgentPrompt(BENJAMIN_DEFAULT_PERSONA, BENJAMIN_FORMAT_SECTION, (existing.benjamin as Record<string, unknown>).persona),
+        ),
         mode: 'subagent',
         description: 'Logic, Math & Code specialist',
-        prompt: mergeAgentPrompt(BENJAMIN_PROMPT, existing.benjamin),
       };
 
       config.agent['conclave-lucas'] = {
-        ...existing.lucas,
+        ...applyPersona(
+          existing.lucas as Record<string, unknown>,
+          buildSubAgentPrompt(LUCAS_DEFAULT_PERSONA, LUCAS_FORMAT_SECTION, (existing.lucas as Record<string, unknown>).persona),
+        ),
         mode: 'subagent',
         description: 'Creative & Alternative Perspectives specialist',
-        prompt: mergeAgentPrompt(LUCAS_PROMPT, existing.lucas),
       };
 
       // Slash command entry point — usable from any agent

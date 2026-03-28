@@ -6,26 +6,31 @@ Multi-agent debate orchestrator plugin for [OpenCode](https://opencode.ai). Runs
 
 1. You select the **Conclave** agent tab in OpenCode and ask a question
 2. Three sub-agents run in parallel — each from their own perspective:
-   - **Harper** — Research & Facts
-   - **Benjamin** — Logic, Math & Code
-   - **Lucas** — Creative & Alternative Perspectives
+  - **Harper** — Research & Facts
+  - **Benjamin** — Logic, Math & Code
+  - **Lucas** — Creative & Alternative Perspectives
 3. The **Captain** critiques all responses and scores consensus
 4. Debate continues for up to 3 rounds; stops early when consensus ≥ 0.83
 5. The Captain synthesizes a final answer from the full debate
 
 ## Installation
 
-### From npm (recommended)
-
-```bash
-npm install -g open-conclave
-```
-
-Then register the plugin in your OpenCode config (`~/.config/opencode/config.json`):
+Add `open-conclave` to the `plugin` array in `~/.config/opencode/opencode.json`. OpenCode installs it automatically on next startup — no separate install command needed.
 
 ```json
 {
-  "plugins": ["open-conclave"]
+  "plugin": ["open-conclave"]
+}
+```
+
+You can also pin a version or use a git URL:
+
+```json
+{
+  "plugin": [
+    "open-conclave@1.0.0",
+    "open-conclave@git+https://github.com/martinzokov/open-conclave.git"
+  ]
 }
 ```
 
@@ -36,19 +41,14 @@ git clone https://github.com/martinzokov/open-conclave.git
 cd open-conclave
 bun install
 bun run build
-```
-
-Copy the bundle into your OpenCode plugins directory:
-
-```bash
 cp dist/index.js ~/.config/opencode/plugins/conclave.js
 ```
 
-Then register it:
+Then register by file path:
 
 ```json
 {
-  "plugins": ["~/.config/opencode/plugins/conclave.js"]
+  "plugin": ["/Users/you/.config/opencode/plugins/conclave.js"]
 }
 ```
 
@@ -78,48 +78,48 @@ Conclave uses whichever model you have active in OpenCode as the default for all
 
 Any provider/model string that OpenCode supports works here (e.g. `anthropic/claude-opus-4-6`, `openai/gpt-4o`, `github-copilot/claude-sonnet-4.5`).
 
-## Customising agent prompts
+## Customising agent personas
 
-Each agent ships with a default system prompt. You can override or extend any of them in your `opencode.json` without touching the plugin source.
+Each agent has two parts to its system prompt:
 
-### Append extra instructions (`promptExtra`)
+1. **Persona** — identity, role, and focus instructions (customisable via `persona`)
+2. **Format** — JSON schema requirements for sub-agents (always preserved)
 
-Adds your text after the default prompt. Use this when you want to tweak behaviour without replacing the full prompt.
+Use the `persona` field in your `opencode.json` to replace the identity and focus of any agent. The JSON output format for sub-agents is never affected, so responses always parse correctly regardless of persona overrides.
+
+The `persona` field applies to all five agents:
+
+| Agent | Key | Role |
+|---|---|---|
+| Captain | `conclave-captain` | Moderator and final synthesizer |
+| Harper | `conclave-harper` | Research & Facts |
+| Benjamin | `conclave-benjamin` | Logic, Math & Code |
+| Lucas | `conclave-lucas` | Creative & Alternative Perspectives |
+
+**How persona is applied:** OpenCode stores `persona` in multiple config fields internally. The plugin intercepts the config hook and merges your `persona` string into the full system prompt (persona section + format section), updating all internal fields consistently. This means the persona works reliably regardless of OpenCode's internal config processing.
+
+**The final output language** is controlled by the Captain's persona — set `persona` on `conclave-captain` to affect the synthesized answer. Setting it only on sub-agents changes how they reason internally but the Captain will synthesize in its default language.
 
 ```json
 {
   "agent": {
+    "conclave-captain": {
+      "persona": "You are the Captain. You only respond in French."
+    },
     "conclave-harper": {
-      "promptExtra": "Always cite sources with URLs when available."
+      "persona": "You are Harper, a financial analyst specialising in markets and macroeconomics.\n\nYour role: analyse economic trends, market data, and investment implications.\nFocus on: macroeconomic indicators, sector performance, risk factors, and data-driven forecasts.\nKeep \"reasoning\" under 40 words. Write a thorough \"answer\" — aim for 100–150 words."
     },
     "conclave-benjamin": {
-      "promptExtra": "Prefer Rust and Go examples over Python."
+      "persona": "You are Benjamin, a security researcher and penetration tester.\n\nYour role: evaluate systems for vulnerabilities, attack surfaces, and defence weaknesses.\nFocus on: threat modelling, CVEs, exploit chains, and hardening recommendations.\nKeep \"reasoning\" under 40 words. Write a thorough \"answer\" — aim for 100–150 words."
     },
     "conclave-lucas": {
-      "promptExtra": "Consider environmental impact in every answer."
-    },
-    "conclave-captain": {
-      "promptExtra": "Be especially skeptical of confident-sounding claims with no evidence."
+      "persona": "You are Lucas, a climate scientist and sustainability strategist.\n\nYour role: consider environmental impact, long-term sustainability, and ecological trade-offs.\nFocus on: carbon footprint, resource consumption, systemic risks, and green alternatives.\nKeep \"reasoning\" under 40 words. Write a thorough \"answer\" — aim for 100–150 words."
     }
   }
 }
 ```
 
-### Full replacement (`prompt`)
-
-Replaces the default prompt entirely. Use this when you want a completely different agent persona.
-
-```json
-{
-  "agent": {
-    "conclave-harper": {
-      "prompt": "You are Harper, a financial analyst specialising in markets and macroeconomics.\n\nAlways respond with a JSON object in a ```json code fence:\n```json\n{\"agentName\": \"Harper\", \"role\": \"Financial Analysis\", \"claims\": [{\"text\": \"...\", \"confidence\": 0.9}], \"reasoning\": \"...\", \"uncertainties\": [], \"answer\": \"...\"}\n```"
-    }
-  }
-}
-```
-
-> When `prompt` and `promptExtra` are both set, `prompt` wins and `promptExtra` is ignored.
+The default persona for each agent is used when no override is set.
 
 ## Usage
 
@@ -147,11 +147,13 @@ opencode run --agent conclave -m github-copilot/claude-sonnet-4.5 "What is the b
 
 When calling the `conclave` tool directly, three optional arguments are available:
 
-| Argument | Type | Default | Description |
-|---|---|---|---|
-| `query` | string | required | The question or task to deliberate on |
-| `maxRounds` | number | `3` | Max debate rounds (1–10) |
-| `debug` | boolean | `false` | Return full debate transcript alongside the answer |
+
+| Argument    | Type    | Default  | Description                                        |
+| ----------- | ------- | -------- | -------------------------------------------------- |
+| `query`     | string  | required | The question or task to deliberate on              |
+| `maxRounds` | number  | `3`      | Max debate rounds (1–10)                           |
+| `debug`     | boolean | `false`  | Return full debate transcript alongside the answer |
+
 
 Debug mode example:
 
