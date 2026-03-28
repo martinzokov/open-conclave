@@ -18,8 +18,7 @@
     "url": "https://github.com/martinzokov/open-conclave.git"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "files": [
     "dist",
