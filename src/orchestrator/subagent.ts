@@ -46,8 +46,7 @@ export class SubAgentRunner {
           : '';
 
       const promptText =
-        `Query: ${input.query}\n\n` +
-        `Your subtasks:\n${input.subtasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}` +
+        `Query: ${input.query}` +
         historyContext +
         '\n\nRespond with a JSON object in a ```json code fence as instructed in your system prompt.';
 
@@ -56,6 +55,7 @@ export class SubAgentRunner {
         body: {
           agent: this.agentName,
           model: { providerID: this.model.providerID, modelID: this.model.modelID },
+          tools: {},
           parts: [{ type: 'text', text: promptText } as { type: 'text'; text: string }],
         },
       });

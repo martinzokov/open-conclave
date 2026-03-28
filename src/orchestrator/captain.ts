@@ -16,6 +16,14 @@ function extractJsonBlock(text: string): string | null {
   return match ? match[1].trim() : null;
 }
 
+function log(msg: string) {
+  process.stderr.write(`[conclave] ${msg}\n`);
+}
+
+function elapsed(start: number): string {
+  return `${((Date.now() - start) / 1000).toFixed(1)}s`;
+}
+
 async function promptCaptain(
   client: OpencodeClient,
   sessionID: string,
@@ -31,6 +39,7 @@ async function promptCaptain(
       body: {
         agent: 'conclave-captain',
         model: { providerID: captainModel.providerID, modelID: captainModel.modelID },
+        tools: {},
         parts: [{ type: 'text', text: promptText } as { type: 'text'; text: string }],
       },
     });
@@ -61,28 +70,13 @@ export class CaptainOrchestrator {
   ) {}
 
   async run(args: OrchestrateArgs): Promise<string> {
-    const maxRounds = args.maxRounds ?? 5;
+    const maxRounds = args.maxRounds ?? 3;
     const { sessionID } = this.context;
+    const totalStart = Date.now();
 
     if (this.context.abort.aborted) throw new Error('Aborted before start');
 
-    // Step 1: Decompose
-    const decomposePrompt =
-      `DECOMPOSE task:\nQuery: ${args.query}\n\n` +
-      'Break this into 3–5 specific subtasks. Respond with JSON: {"subtasks": [...]}';
-
-    const decomposeText = await promptCaptain(
-      this.client,
-      sessionID,
-      this.config.captain,
-      decomposePrompt,
-    );
-
-    const decomposeJson = extractJsonBlock(decomposeText);
-    const subtasks: string[] = decomposeJson
-      ? (JSON.parse(decomposeJson) as { subtasks: string[] }).subtasks
-      : [args.query];
-
+    log(`start  model=${this.config.captain.providerID}/${this.config.captain.modelID}  maxRounds=${maxRounds}`);
     const history = new DebateHistory();
     let roundNumber = 0;
 
@@ -90,21 +84,32 @@ export class CaptainOrchestrator {
     for (roundNumber = 1; roundNumber <= maxRounds; roundNumber++) {
       if (this.context.abort.aborted) throw new Error('Aborted during debate');
 
+      log(`round ${roundNumber}  sub-agents start  count=${this.config.subAgents.length}`);
+      const tAgents = Date.now();
+
       // Parallel sub-agent calls
       const subAgentResponses: AgentResponse[] = await Promise.all(
         this.config.subAgents.map((sa) => {
           const runner = new SubAgentRunner(this.client, sa.name, sa.model);
-          return runner.run({
-            sessionID,
-            query: args.query,
-            subtasks,
-            recentHistory: history.getContext(3),
-            roundNumber,
-          });
+          const tSa = Date.now();
+          return runner
+            .run({
+              sessionID,
+              query: args.query,
+              recentHistory: history.getContext(3),
+              roundNumber,
+            })
+            .then((r) => {
+              log(`round ${roundNumber}  ${sa.name}  done  ${elapsed(tSa)}`);
+              return r;
+            });
         }),
       );
+      log(`round ${roundNumber}  sub-agents done   ${elapsed(tAgents)}`);
 
       // Captain critique
+      log(`round ${roundNumber}  critique   start`);
+      const tCrit = Date.now();
       const critiquePrompt =
         `CRITIQUE task (Round ${roundNumber}):\n` +
         `Query: ${args.query}\n\n` +
@@ -117,6 +122,7 @@ export class CaptainOrchestrator {
         this.config.captain,
         critiquePrompt,
       );
+      log(`round ${roundNumber}  critique   done   ${elapsed(tCrit)}`);
 
       const critiqueJson = extractJsonBlock(critiqueText);
       const critique: CritiqueResult = critiqueJson
@@ -140,10 +146,16 @@ export class CaptainOrchestrator {
         maxRounds,
       });
 
+      log(
+        `round ${roundNumber}  stop=${stopping.shouldStop}  consensus=${critique.consensusScore.toFixed(2)}  reason=${stopping.reason ?? 'none'}`,
+      );
+
       if (stopping.shouldStop) break;
     }
 
     // Step 3: Synthesize
+    log(`synthesize start`);
+    const tSynth = Date.now();
     const synthesizePrompt =
       `SYNTHESIZE task:\nQuery: ${args.query}\n\n` +
       `Debate history (${roundNumber} round${roundNumber !== 1 ? 's' : ''}):\n` +
@@ -159,6 +171,8 @@ export class CaptainOrchestrator {
       this.config.captain,
       synthesizePrompt,
     );
+    log(`synthesize done   ${elapsed(tSynth)}`);
+    log(`total      ${elapsed(totalStart)}  rounds=${roundNumber}`);
 
     if (args.debug) {
       const transcript = buildTranscript(history);

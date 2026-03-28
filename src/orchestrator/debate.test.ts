@@ -104,18 +104,19 @@ describe('evaluateStopping', () => {
     expect(result.shouldStop).toBe(true);
   });
 
-  it('does not stop when consensus below threshold', () => {
-    const result = evaluateStopping({ ...base, consensusScore: 0.8 });
+  it('does not stop when consensus below lower threshold (0.70)', () => {
+    const result = evaluateStopping({ ...base, consensusScore: 0.70 });
     expect(result.shouldStop).toBe(false);
   });
 
-  it('does not stop when openIssues remain', () => {
-    const result = evaluateStopping({ ...base, openIssuesCount: 1 });
+  it('does not stop at moderate consensus when only 1 of 3 secondary signals met', () => {
+    // consensusScore=0.78 is between thresholds; openIssues+novelty both bad → only uncertaintyDelta passes
+    const result = evaluateStopping({ ...base, consensusScore: 0.78, openIssuesCount: 2, noveltyScore: 0.1 });
     expect(result.shouldStop).toBe(false);
   });
 
-  it('does not stop when novelty is too high', () => {
-    const result = evaluateStopping({ ...base, noveltyScore: 0.1 });
+  it('does not stop below lower threshold regardless of secondary signals', () => {
+    const result = evaluateStopping({ ...base, consensusScore: 0.60, openIssuesCount: 0, noveltyScore: 0.02 });
     expect(result.shouldStop).toBe(false);
   });
 

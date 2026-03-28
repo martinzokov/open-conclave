@@ -1,6 +1,9 @@
 import { tool } from '@opencode-ai/plugin';
 import type { ToolContext } from '@opencode-ai/plugin';
 import type { OpencodeClient } from '@opencode-ai/sdk';
+import { resolveSubAgentModels } from '../config/loader.ts';
+import { CaptainOrchestrator } from '../orchestrator/captain.ts';
+import { DEFAULT_SUB_AGENTS } from '../agents/prompts.ts';
 
 export function createOrchestrateTool(client: OpencodeClient) {
   return tool({
@@ -26,10 +29,6 @@ export function createOrchestrateTool(client: OpencodeClient) {
       args: { query: string; maxRounds?: number; debug?: boolean },
       context: ToolContext,
     ): Promise<string> {
-      // Inline import to avoid circular dependencies at module load time
-      const { resolveSubAgentModels } = await import('../config/loader.ts');
-      const { CaptainOrchestrator } = await import('../orchestrator/captain.ts');
-      const { DEFAULT_SUB_AGENTS } = await import('../agents/prompts.ts');
 
       const resolvedConfig = await resolveSubAgentModels(client, context, [...DEFAULT_SUB_AGENTS]);
       const captain = new CaptainOrchestrator(client, context, resolvedConfig);

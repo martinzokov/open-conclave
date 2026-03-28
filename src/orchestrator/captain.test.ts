@@ -12,10 +12,10 @@ const context: ToolContext = {
 };
 
 const resolvedConfig: ResolvedConfig = {
-  captain: { providerID: 'anthropic', modelID: 'claude-opus-4-6' },
+  captain: { providerID: 'github-copilot', modelID: 'claude-sonnet-4.5' },
   subAgents: [
-    { name: 'conclave-harper', role: 'Research', model: { providerID: 'openai', modelID: 'gpt-4o' } },
-    { name: 'conclave-benjamin', role: 'Logic', model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' } },
+    { name: 'conclave-harper', role: 'Research', model: { providerID: 'github-copilot', modelID: 'claude-sonnet-4.5' } },
+    { name: 'conclave-benjamin', role: 'Logic', model: { providerID: 'github-copilot', modelID: 'gpt-4.1' } },
   ],
 };
 
@@ -67,12 +67,11 @@ describe('CaptainOrchestrator', () => {
   const args: OrchestrateArgs = { query: 'Best database for read-heavy workloads?', maxRounds: 3, debug: false };
 
   it('returns a string result', async () => {
-    // decompose → subagent1 → subagent2 → critique (stop) → synthesize
+    // subagent1 → subagent2 → critique (stop) → synthesize
     const client = makeClient([
-      makeDecomposeResponse(['Research options', 'Evaluate trade-offs']),
       makeSubAgentResponse('PostgreSQL is excellent for reads.'),
       makeSubAgentResponse('Indexing is key for performance.'),
-      makeCritiqueResponse(0.95, []), // all soft conditions met → stop after round 1
+      makeCritiqueResponse(0.95, []), // high consensus → stop after round 1
       'PostgreSQL with proper indexing is the best choice.',
     ]);
 
@@ -84,7 +83,6 @@ describe('CaptainOrchestrator', () => {
 
   it('runs exactly 1 round when maxRounds=1', async () => {
     const promptMock = vi.fn()
-      .mockResolvedValueOnce({ data: { info: {}, parts: [{ type: 'text', text: makeDecomposeResponse(['t1']) }] } })
       .mockResolvedValueOnce({ data: { info: {}, parts: [{ type: 'text', text: makeSubAgentResponse('ans1') }] } })
       .mockResolvedValueOnce({ data: { info: {}, parts: [{ type: 'text', text: makeSubAgentResponse('ans2') }] } })
       .mockResolvedValueOnce({ data: { info: {}, parts: [{ type: 'text', text: makeCritiqueResponse(0.6, ['still issues']) }] } })
@@ -101,14 +99,13 @@ describe('CaptainOrchestrator', () => {
     const captain = new CaptainOrchestrator(client, context, resolvedConfig);
     const result = await captain.run({ ...args, maxRounds: 1 });
 
-    // 1 decompose + 2 sub-agents + 1 critique + 1 synthesize = 5 calls
-    expect(promptMock).toHaveBeenCalledTimes(5);
+    // 2 sub-agents + 1 critique + 1 synthesize = 4 calls
+    expect(promptMock).toHaveBeenCalledTimes(4);
     expect(typeof result).toBe('string');
   });
 
   it('includes debate transcript in debug mode', async () => {
     const client = makeClient([
-      makeDecomposeResponse(['task1']),
       makeSubAgentResponse('answer A'),
       makeSubAgentResponse('answer B'),
       makeCritiqueResponse(0.95, []),
@@ -125,7 +122,6 @@ describe('CaptainOrchestrator', () => {
     const abortedContext: ToolContext = { ...context, abort: controller.signal };
 
     const client = makeClient([
-      makeDecomposeResponse(['t1']),
       makeSubAgentResponse('ans'),
       makeSubAgentResponse('ans'),
       makeCritiqueResponse(0.3, ['open']),

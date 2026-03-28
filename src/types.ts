@@ -65,7 +65,6 @@ export type StoppingResult = {
 export type SubAgentInput = {
   sessionID: string;
   query: string;
-  subtasks: string[];
   recentHistory: DebateRound[];
   roundNumber: number;
 };
