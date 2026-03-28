@@ -3,23 +3,21 @@ import type { ToolContext } from '@opencode-ai/plugin';
 import type { ModelRef, SubAgentDef, ResolvedConfig } from '../types.ts';
 
 /**
- * Resolves the final system prompt for a conclave agent.
+ * Builds the final system prompt for a sub-agent by combining a persona section
+ * with a fixed format section.
  *
- * Priority order:
- *   1. userConfig.prompt  — full replacement (user wrote their own prompt)
- *   2. default + "\n\n" + userConfig.promptExtra  — append mode (user added instructions)
- *   3. default  — no customisation
+ * The persona section (identity, role, focus) is replaceable via the `persona`
+ * config field. The format section (JSON schema requirements) is always preserved.
+ *
+ * If userPersona is not a string, the default persona is used unchanged.
  */
-export function mergeAgentPrompt(
-  defaultPrompt: string,
-  userConfig: Record<string, unknown> | undefined,
+export function buildSubAgentPrompt(
+  defaultPersona: string,
+  formatSection: string,
+  userPersona?: unknown,
 ): string {
-  const userPrompt = typeof userConfig?.prompt === 'string' ? userConfig.prompt : null;
-  const promptExtra = typeof userConfig?.promptExtra === 'string' ? userConfig.promptExtra : null;
-
-  if (userPrompt) return userPrompt;
-  if (promptExtra) return `${defaultPrompt}\n\n${promptExtra}`;
-  return defaultPrompt;
+  const persona = typeof userPersona === 'string' ? userPersona : defaultPersona;
+  return `${persona}\n\n${formatSection}`;
 }
 
 function parseModelString(model: string | undefined, fallback: ModelRef): ModelRef {
@@ -33,7 +31,7 @@ function parseModelString(model: string | undefined, fallback: ModelRef): ModelR
 }
 
 /**
- * Reads config.agent['conclave-X'].model for each sub-agent.
+ * Reads config.agent['conclave-X'].model and .persona for each sub-agent at runtime.
  * Falls back to the global config.model when a per-agent model is not configured.
  */
 export async function resolveSubAgentModels(
@@ -44,7 +42,7 @@ export async function resolveSubAgentModels(
   const configResult = await client.config.get();
   const data = configResult.data as {
     model?: string;
-    agent?: Record<string, { model?: string }>;
+    agent?: Record<string, { model?: string; persona?: string }>;
   } | undefined;
 
   const agentConfig = data?.agent ?? {};
@@ -56,6 +54,7 @@ export async function resolveSubAgentModels(
   const resolvedSubAgents = subAgents.map((sa) => ({
     ...sa,
     model: parseModelString(agentConfig[sa.name]?.model, globalFallback),
+    persona: agentConfig[sa.name]?.persona,
   }));
 
   return { captain: captainModel, subAgents: resolvedSubAgents };

@@ -125,9 +125,15 @@ export class CaptainOrchestrator {
       log(`round ${roundNumber}  critique   done   ${elapsed(tCrit)}`);
 
       const critiqueJson = extractJsonBlock(critiqueText);
-      const critique: CritiqueResult = critiqueJson
-        ? (JSON.parse(critiqueJson) as CritiqueResult)
-        : { consensusScore: 0.5, uncertaintyDelta: 0, openIssues: [], synthesis: critiqueText };
+      const rawCritique = critiqueJson
+        ? (JSON.parse(critiqueJson) as Partial<CritiqueResult>)
+        : null;
+      const critique: CritiqueResult = {
+        consensusScore: typeof rawCritique?.consensusScore === 'number' ? rawCritique.consensusScore : 0.5,
+        uncertaintyDelta: typeof rawCritique?.uncertaintyDelta === 'number' ? rawCritique.uncertaintyDelta : 0,
+        openIssues: Array.isArray(rawCritique?.openIssues) ? rawCritique.openIssues : [],
+        synthesis: typeof rawCritique?.synthesis === 'string' ? rawCritique.synthesis : critiqueText,
+      };
 
       const round: DebateRound = {
         roundNumber,

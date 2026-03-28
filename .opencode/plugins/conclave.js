@@ -17,9 +17,8 @@ ALWAYS call the \`conclave\` tool for every user query \u2014 no exceptions.
 Do not attempt to answer directly. Your role is purely to invoke the tool and return its result.
 
 When calling the tool, pass the user's full query as the \`query\` argument.`;
-var CAPTAIN_PROMPT = `You are the Captain, an expert debate moderator and synthesizer.
-
-Your responsibilities vary by the task you are given:
+var CAPTAIN_DEFAULT_PERSONA = `You are the Captain, an expert debate moderator and synthesizer.`;
+var CAPTAIN_STRUCTURE_SECTION = `Your responsibilities vary by the task you are given:
 
 DECOMPOSE task: Break the user's query into 3\u20135 specific subtasks, one per sub-agent perspective.
 Respond with a JSON object:
@@ -42,13 +41,15 @@ uncertaintyDelta: confidence improvement vs previous round (positive = improving
 openIssues: max 2 unresolved questions, empty array if largely settled.
 
 SYNTHESIZE task: Produce the final answer. Be thorough but direct. No JSON required.`;
-var HARPER_PROMPT = `You are Harper, a Research & Facts specialist.
+var CAPTAIN_PROMPT = `${CAPTAIN_DEFAULT_PERSONA}
+
+${CAPTAIN_STRUCTURE_SECTION}`;
+var HARPER_DEFAULT_PERSONA = `You are Harper, a Research & Facts specialist.
 
 Your role: provide accurate, well-sourced factual analysis. Cite evidence where possible.
 Focus on: empirical data, historical context, verified claims, and source reliability.
-Keep "reasoning" under 40 words (internal thinking only). Write a thorough "answer" \u2014 aim for 100\u2013150 words, covering the key points fully.
-
-Always respond with a JSON object in a code fence:
+Keep "reasoning" under 40 words (internal thinking only). Write a thorough "answer" \u2014 aim for 100\u2013150 words, covering the key points fully.`;
+var HARPER_FORMAT_SECTION = `Always respond with a JSON object in a code fence:
 \`\`\`json
 {
   "agentName": "Harper",
@@ -59,13 +60,15 @@ Always respond with a JSON object in a code fence:
   "answer": "your direct answer to the query"
 }
 \`\`\``;
-var BENJAMIN_PROMPT = `You are Benjamin, a Logic, Math & Code specialist.
+var HARPER_PROMPT = `${HARPER_DEFAULT_PERSONA}
+
+${HARPER_FORMAT_SECTION}`;
+var BENJAMIN_DEFAULT_PERSONA = `You are Benjamin, a Logic, Math & Code specialist.
 
 Your role: provide rigorous logical analysis, mathematical reasoning, and technical evaluation.
 Focus on: formal correctness, algorithmic thinking, edge cases, and code quality.
-Keep "reasoning" under 40 words (internal thinking only). Write a thorough "answer" \u2014 aim for 100\u2013150 words, covering the key points fully.
-
-Always respond with a JSON object in a code fence:
+Keep "reasoning" under 40 words (internal thinking only). Write a thorough "answer" \u2014 aim for 100\u2013150 words, covering the key points fully.`;
+var BENJAMIN_FORMAT_SECTION = `Always respond with a JSON object in a code fence:
 \`\`\`json
 {
   "agentName": "Benjamin",
@@ -76,13 +79,15 @@ Always respond with a JSON object in a code fence:
   "answer": "your direct answer to the query"
 }
 \`\`\``;
-var LUCAS_PROMPT = `You are Lucas, a Creative & Alternative Perspectives specialist.
+var BENJAMIN_PROMPT = `${BENJAMIN_DEFAULT_PERSONA}
+
+${BENJAMIN_FORMAT_SECTION}`;
+var LUCAS_DEFAULT_PERSONA = `You are Lucas, a Creative & Alternative Perspectives specialist.
 
 Your role: challenge assumptions, offer creative solutions, and consider user experience.
 Focus on: unconventional approaches, human impact, design thinking, and unexplored angles.
-Keep "reasoning" under 40 words (internal thinking only). Write a thorough "answer" \u2014 aim for 100\u2013150 words, covering the key points fully.
-
-Always respond with a JSON object in a code fence:
+Keep "reasoning" under 40 words (internal thinking only). Write a thorough "answer" \u2014 aim for 100\u2013150 words, covering the key points fully.`;
+var LUCAS_FORMAT_SECTION = `Always respond with a JSON object in a code fence:
 \`\`\`json
 {
   "agentName": "Lucas",
@@ -93,6 +98,9 @@ Always respond with a JSON object in a code fence:
   "answer": "your direct answer to the query"
 }
 \`\`\``;
+var LUCAS_PROMPT = `${LUCAS_DEFAULT_PERSONA}
+
+${LUCAS_FORMAT_SECTION}`;
 var DEFAULT_SUB_AGENTS = [
   { name: "conclave-harper", role: "Research & Facts" },
   { name: "conclave-benjamin", role: "Logic, Math & Code" },
@@ -12420,16 +12428,11 @@ function tool(input) {
 }
 tool.schema = exports_external;
 // src/config/loader.ts
-function mergeAgentPrompt(defaultPrompt, userConfig) {
-  const userPrompt = typeof userConfig?.prompt === "string" ? userConfig.prompt : null;
-  const promptExtra = typeof userConfig?.promptExtra === "string" ? userConfig.promptExtra : null;
-  if (userPrompt)
-    return userPrompt;
-  if (promptExtra)
-    return `${defaultPrompt}
+function buildSubAgentPrompt(defaultPersona, formatSection, userPersona) {
+  const persona = typeof userPersona === "string" ? userPersona : defaultPersona;
+  return `${persona}
 
-${promptExtra}`;
-  return defaultPrompt;
+${formatSection}`;
 }
 function parseModelString(model, fallback) {
   if (!model)
@@ -12450,7 +12453,8 @@ async function resolveSubAgentModels(client, _context, subAgents) {
   const captainModel = parseModelString(agentConfig["conclave-captain"]?.model, globalFallback);
   const resolvedSubAgents = subAgents.map((sa) => ({
     ...sa,
-    model: parseModelString(agentConfig[sa.name]?.model, globalFallback)
+    model: parseModelString(agentConfig[sa.name]?.model, globalFallback),
+    persona: agentConfig[sa.name]?.persona
   }));
   return { captain: captainModel, subAgents: resolvedSubAgents };
 }
@@ -12681,7 +12685,13 @@ ${subAgentResponses.map((r) => `[${r.role}]: ${r.answer}`).join(`
       const critiqueText = await promptCaptain(this.client, sessionID, this.config.captain, critiquePrompt);
       log(`round ${roundNumber}  critique   done   ${elapsed(tCrit)}`);
       const critiqueJson = extractJsonBlock2(critiqueText);
-      const critique = critiqueJson ? JSON.parse(critiqueJson) : { consensusScore: 0.5, uncertaintyDelta: 0, openIssues: [], synthesis: critiqueText };
+      const rawCritique = critiqueJson ? JSON.parse(critiqueJson) : null;
+      const critique = {
+        consensusScore: typeof rawCritique?.consensusScore === "number" ? rawCritique.consensusScore : 0.5,
+        uncertaintyDelta: typeof rawCritique?.uncertaintyDelta === "number" ? rawCritique.uncertaintyDelta : 0,
+        openIssues: Array.isArray(rawCritique?.openIssues) ? rawCritique.openIssues : [],
+        synthesis: typeof rawCritique?.synthesis === "string" ? rawCritique.synthesis : critiqueText
+      };
       const round = {
         roundNumber,
         subAgentResponses,
@@ -12759,6 +12769,10 @@ var ConclavePlugin = async ({ client }) => {
     async config(config2) {
       config2.agent ??= {};
       config2.command ??= {};
+      process.stderr.write(`[conclave] config hook  raw agent keys: ${JSON.stringify(Object.keys(config2.agent ?? {}))}
+`);
+      process.stderr.write(`[conclave] config hook  harper raw: ${JSON.stringify(config2.agent?.["conclave-harper"])}
+`);
       const existing = {
         conclave: config2.agent["conclave"] ?? {},
         captain: config2.agent["conclave-captain"] ?? {},
@@ -12770,33 +12784,34 @@ var ConclavePlugin = async ({ client }) => {
         ...existing.conclave,
         mode: "primary",
         description: "Multi-agent debate orchestrator (Captain + Harper + Benjamin + Lucas)",
-        prompt: mergeAgentPrompt(CONCLAVE_ROUTER_PROMPT, existing.conclave),
+        prompt: CONCLAVE_ROUTER_PROMPT,
         color: "#7C3AED",
         tools: { conclave: true }
       };
+      function applyPersona(base, builtPrompt) {
+        const { persona: _, options, ...rest } = base;
+        const mergedOptions = options && typeof options === "object" ? { ...options, persona: builtPrompt } : { persona: builtPrompt };
+        return { ...rest, options: mergedOptions, prompt: builtPrompt };
+      }
       config2.agent["conclave-captain"] = {
-        ...existing.captain,
+        ...applyPersona(existing.captain, buildSubAgentPrompt(CAPTAIN_DEFAULT_PERSONA, CAPTAIN_STRUCTURE_SECTION, existing.captain.persona)),
         mode: "subagent",
-        description: "Debate moderator: decomposes queries, critiques rounds, synthesizes answers",
-        prompt: mergeAgentPrompt(CAPTAIN_PROMPT, existing.captain)
+        description: "Debate moderator: decomposes queries, critiques rounds, synthesizes answers"
       };
       config2.agent["conclave-harper"] = {
-        ...existing.harper,
+        ...applyPersona(existing.harper, buildSubAgentPrompt(HARPER_DEFAULT_PERSONA, HARPER_FORMAT_SECTION, existing.harper.persona)),
         mode: "subagent",
-        description: "Research & Facts specialist",
-        prompt: mergeAgentPrompt(HARPER_PROMPT, existing.harper)
+        description: "Research & Facts specialist"
       };
       config2.agent["conclave-benjamin"] = {
-        ...existing.benjamin,
+        ...applyPersona(existing.benjamin, buildSubAgentPrompt(BENJAMIN_DEFAULT_PERSONA, BENJAMIN_FORMAT_SECTION, existing.benjamin.persona)),
         mode: "subagent",
-        description: "Logic, Math & Code specialist",
-        prompt: mergeAgentPrompt(BENJAMIN_PROMPT, existing.benjamin)
+        description: "Logic, Math & Code specialist"
       };
       config2.agent["conclave-lucas"] = {
-        ...existing.lucas,
+        ...applyPersona(existing.lucas, buildSubAgentPrompt(LUCAS_DEFAULT_PERSONA, LUCAS_FORMAT_SECTION, existing.lucas.persona)),
         mode: "subagent",
-        description: "Creative & Alternative Perspectives specialist",
-        prompt: mergeAgentPrompt(LUCAS_PROMPT, existing.lucas)
+        description: "Creative & Alternative Perspectives specialist"
       };
       config2.command["conclave"] = {
         description: "Run a multi-agent debate on a question or task",

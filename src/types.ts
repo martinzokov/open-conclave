@@ -80,5 +80,5 @@ export type OrchestrateArgs = {
 /** Output of ConfigLoader.resolveSubAgentModels(). */
 export type ResolvedConfig = {
   captain: ModelRef;
-  subAgents: Array<SubAgentDef & { model: ModelRef }>;
+  subAgents: Array<SubAgentDef & { model: ModelRef; persona?: string }>;
 };

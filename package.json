@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "description": "Multi-agent debate orchestrator plugin for OpenCode — Captain + parallel sub-agents + dynamic debate rounds + early stopping",
   "author": {
-    "name": "{{authorName}}",
-    "email": "{{authorEmail}}"
+    "name": "Martin Zokov",
+    "email": "martinzokov@gmail.com"
   },
   "type": "module",
   "exports": {
@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "{{repositoryUrl}}"
+    "url": "https://github.com/martinzokov/open-conclave.git"
   },
   "publishConfig": {
     "access": "public",
@@ -25,6 +25,14 @@
     "dist",
     "src/version.ts"
   ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir dist --target bun",
+    "prepublishOnly": "bun run test && bun run build",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "1.0.85"
   },
