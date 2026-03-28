@@ -42,6 +42,7 @@ if [ "${usage_dry_run}" != "true" ]; then
 		echo " > provenance: disabled (local environment)"
 	else
 		# GitHub Actions: enable provenance (OIDC will handle it automatically)
+		PROVENANCE_FLAG="--provenance"
 		echo " > provenance: enabled (GitHub Actions with OIDC)"
 	fi
 
