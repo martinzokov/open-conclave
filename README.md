@@ -78,6 +78,46 @@ Conclave uses whichever model you have active in OpenCode as the default for all
 
 Any provider/model string that OpenCode supports works here (e.g. `anthropic/claude-opus-4-6`, `openai/gpt-4o`, `github-copilot/claude-sonnet-4.5`).
 
+## Default agent behaviour
+
+### Captain (`conclave-captain`)
+
+Expert debate moderator and synthesizer. Handles three internal tasks:
+
+- **CRITIQUE** — after each round, scores consensus (0.0–1.0), measures uncertainty improvement, and lists up to 2 open issues. Stops the debate early when consensus ≥ 0.83.
+- **SYNTHESIZE** — produces the final answer from the full debate history. This is what the user sees.
+
+The Captain's persona controls the language and tone of the final output.
+
+### Harper (`conclave-harper`)
+
+**Research & Facts** — provides accurate, well-sourced factual analysis. Cites evidence where possible. Focuses on empirical data, historical context, verified claims, and source reliability.
+
+### Benjamin (`conclave-benjamin`)
+
+**Logic, Math & Code** — provides rigorous logical analysis, mathematical reasoning, and technical evaluation. Focuses on formal correctness, algorithmic thinking, edge cases, and code quality.
+
+### Lucas (`conclave-lucas`)
+
+**Creative & Alternative Perspectives** — challenges assumptions, offers creative solutions, and considers user experience. Focuses on unconventional approaches, human impact, design thinking, and unexplored angles.
+
+### Sub-agent response format
+
+Each sub-agent always responds with a structured JSON object:
+
+```json
+{
+  "agentName": "Harper",
+  "role": "Research & Facts",
+  "claims": [{ "text": "claim text", "confidence": 0.9 }],
+  "reasoning": "brief internal reasoning (≤40 words)",
+  "uncertainties": ["any unknowns or caveats"],
+  "answer": "direct answer to the query (100–150 words)"
+}
+```
+
+The format section of the system prompt is always preserved — `persona` overrides only replace the identity/role/focus section, so the JSON output is never broken by a custom persona.
+
 ## Customising agent personas
 
 Each agent has two parts to its system prompt:
