@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { resolveSubAgentModels } from './loader.ts';
+import { resolveSubAgentModels, mergeAgentPrompt } from './loader.ts';
 import type { SubAgentDef } from '../types.ts';
 
 const subAgents: SubAgentDef[] = [
@@ -65,5 +65,45 @@ describe('resolveSubAgentModels', () => {
     });
     const result = await resolveSubAgentModels(client, context, subAgents);
     expect(result.captain.modelID).toBe('just-a-model-no-slash');
+  });
+});
+
+describe('mergeAgentPrompt', () => {
+  const DEFAULT = 'You are Harper, a Research specialist.';
+
+  it('returns the default when userConfig is undefined', () => {
+    expect(mergeAgentPrompt(DEFAULT, undefined)).toBe(DEFAULT);
+  });
+
+  it('returns the default when userConfig has no prompt or promptExtra', () => {
+    expect(mergeAgentPrompt(DEFAULT, {})).toBe(DEFAULT);
+  });
+
+  it('returns user prompt when prompt is set (full override)', () => {
+    const userConfig = { prompt: 'Custom full prompt.' };
+    expect(mergeAgentPrompt(DEFAULT, userConfig)).toBe('Custom full prompt.');
+  });
+
+  it('appends promptExtra to the default when only promptExtra is set', () => {
+    const userConfig = { promptExtra: 'Always cite sources with URLs.' };
+    const result = mergeAgentPrompt(DEFAULT, userConfig);
+    expect(result).toContain(DEFAULT);
+    expect(result).toContain('Always cite sources with URLs.');
+    expect(result.indexOf(DEFAULT)).toBeLessThan(result.indexOf('Always cite sources'));
+  });
+
+  it('full override wins over promptExtra when both are set', () => {
+    const userConfig = { prompt: 'My override.', promptExtra: 'Ignored.' };
+    expect(mergeAgentPrompt(DEFAULT, userConfig)).toBe('My override.');
+  });
+
+  it('ignores prompt field if it is not a string', () => {
+    const userConfig = { prompt: 42 };
+    expect(mergeAgentPrompt(DEFAULT, userConfig)).toBe(DEFAULT);
+  });
+
+  it('ignores promptExtra field if it is not a string', () => {
+    const userConfig = { promptExtra: true };
+    expect(mergeAgentPrompt(DEFAULT, userConfig)).toBe(DEFAULT);
   });
 });

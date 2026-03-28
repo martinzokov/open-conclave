@@ -78,6 +78,49 @@ Conclave uses whichever model you have active in OpenCode as the default for all
 
 Any provider/model string that OpenCode supports works here (e.g. `anthropic/claude-opus-4-6`, `openai/gpt-4o`, `github-copilot/claude-sonnet-4.5`).
 
+## Customising agent prompts
+
+Each agent ships with a default system prompt. You can override or extend any of them in your `opencode.json` without touching the plugin source.
+
+### Append extra instructions (`promptExtra`)
+
+Adds your text after the default prompt. Use this when you want to tweak behaviour without replacing the full prompt.
+
+```json
+{
+  "agent": {
+    "conclave-harper": {
+      "promptExtra": "Always cite sources with URLs when available."
+    },
+    "conclave-benjamin": {
+      "promptExtra": "Prefer Rust and Go examples over Python."
+    },
+    "conclave-lucas": {
+      "promptExtra": "Consider environmental impact in every answer."
+    },
+    "conclave-captain": {
+      "promptExtra": "Be especially skeptical of confident-sounding claims with no evidence."
+    }
+  }
+}
+```
+
+### Full replacement (`prompt`)
+
+Replaces the default prompt entirely. Use this when you want a completely different agent persona.
+
+```json
+{
+  "agent": {
+    "conclave-harper": {
+      "prompt": "You are Harper, a financial analyst specialising in markets and macroeconomics.\n\nAlways respond with a JSON object in a ```json code fence:\n```json\n{\"agentName\": \"Harper\", \"role\": \"Financial Analysis\", \"claims\": [{\"text\": \"...\", \"confidence\": 0.9}], \"reasoning\": \"...\", \"uncertainties\": [], \"answer\": \"...\"}\n```"
+    }
+  }
+}
+```
+
+> When `prompt` and `promptExtra` are both set, `prompt` wins and `promptExtra` is ignored.
+
 ## Usage
 
 ### TUI (interactive)

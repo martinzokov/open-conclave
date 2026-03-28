@@ -12420,6 +12420,17 @@ function tool(input) {
 }
 tool.schema = exports_external;
 // src/config/loader.ts
+function mergeAgentPrompt(defaultPrompt, userConfig) {
+  const userPrompt = typeof userConfig?.prompt === "string" ? userConfig.prompt : null;
+  const promptExtra = typeof userConfig?.promptExtra === "string" ? userConfig.promptExtra : null;
+  if (userPrompt)
+    return userPrompt;
+  if (promptExtra)
+    return `${defaultPrompt}
+
+${promptExtra}`;
+  return defaultPrompt;
+}
 function parseModelString(model, fallback) {
   if (!model)
     return fallback;
@@ -12748,32 +12759,44 @@ var ConclavePlugin = async ({ client }) => {
     async config(config2) {
       config2.agent ??= {};
       config2.command ??= {};
+      const existing = {
+        conclave: config2.agent["conclave"] ?? {},
+        captain: config2.agent["conclave-captain"] ?? {},
+        harper: config2.agent["conclave-harper"] ?? {},
+        benjamin: config2.agent["conclave-benjamin"] ?? {},
+        lucas: config2.agent["conclave-lucas"] ?? {}
+      };
       config2.agent["conclave"] = {
+        ...existing.conclave,
         mode: "primary",
         description: "Multi-agent debate orchestrator (Captain + Harper + Benjamin + Lucas)",
-        prompt: CONCLAVE_ROUTER_PROMPT,
+        prompt: mergeAgentPrompt(CONCLAVE_ROUTER_PROMPT, existing.conclave),
         color: "#7C3AED",
         tools: { conclave: true }
       };
       config2.agent["conclave-captain"] = {
+        ...existing.captain,
         mode: "subagent",
         description: "Debate moderator: decomposes queries, critiques rounds, synthesizes answers",
-        prompt: CAPTAIN_PROMPT
+        prompt: mergeAgentPrompt(CAPTAIN_PROMPT, existing.captain)
       };
       config2.agent["conclave-harper"] = {
+        ...existing.harper,
         mode: "subagent",
         description: "Research & Facts specialist",
-        prompt: HARPER_PROMPT
+        prompt: mergeAgentPrompt(HARPER_PROMPT, existing.harper)
       };
       config2.agent["conclave-benjamin"] = {
+        ...existing.benjamin,
         mode: "subagent",
         description: "Logic, Math & Code specialist",
-        prompt: BENJAMIN_PROMPT
+        prompt: mergeAgentPrompt(BENJAMIN_PROMPT, existing.benjamin)
       };
       config2.agent["conclave-lucas"] = {
+        ...existing.lucas,
         mode: "subagent",
         description: "Creative & Alternative Perspectives specialist",
-        prompt: LUCAS_PROMPT
+        prompt: mergeAgentPrompt(LUCAS_PROMPT, existing.lucas)
       };
       config2.command["conclave"] = {
         description: "Run a multi-agent debate on a question or task",

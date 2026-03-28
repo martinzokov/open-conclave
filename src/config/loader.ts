@@ -2,6 +2,26 @@ import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { ToolContext } from '@opencode-ai/plugin';
 import type { ModelRef, SubAgentDef, ResolvedConfig } from '../types.ts';
 
+/**
+ * Resolves the final system prompt for a conclave agent.
+ *
+ * Priority order:
+ *   1. userConfig.prompt  — full replacement (user wrote their own prompt)
+ *   2. default + "\n\n" + userConfig.promptExtra  — append mode (user added instructions)
+ *   3. default  — no customisation
+ */
+export function mergeAgentPrompt(
+  defaultPrompt: string,
+  userConfig: Record<string, unknown> | undefined,
+): string {
+  const userPrompt = typeof userConfig?.prompt === 'string' ? userConfig.prompt : null;
+  const promptExtra = typeof userConfig?.promptExtra === 'string' ? userConfig.promptExtra : null;
+
+  if (userPrompt) return userPrompt;
+  if (promptExtra) return `${defaultPrompt}\n\n${promptExtra}`;
+  return defaultPrompt;
+}
+
 function parseModelString(model: string | undefined, fallback: ModelRef): ModelRef {
   if (!model) return fallback;
   const slash = model.indexOf('/');
