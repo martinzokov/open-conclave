@@ -41,6 +41,9 @@ jobs:
       - id: inputs
         uses: simenandre/setup-inputs@v1
 
+      - name: Authenticate with npm
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
       - name: Publish to npm with OIDC
         run: |
           TAG="${{ steps.inputs.outputs.tag }}"
